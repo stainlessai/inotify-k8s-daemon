@@ -1,0 +1,39 @@
+# values.yaml
+image:
+  repository: stainlessai/inotify-k8s-daemon
+  tag: latest
+  pullPolicy: Always
+
+# Resource limits
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+# Default volumes and mounts
+volumes:
+  - name: source-dir
+    hostPath:
+      path: /path/on/host/source
+  - name: target-dir
+    hostPath:
+      path: /path/on/host/target
+
+volumeMounts:
+  - name: source-dir
+    mountPath: /watch/source
+  - name: target-dir
+    mountPath: /watch/target
+
+# Extra volumes and mounts that can be added through values
+extraVolumes: []
+extraVolumeMounts: []
+
+# Security context
+#securityContext:
+#  runAsUser: 100
+#  runAsGroup: 100
+#  fsGroup: 100

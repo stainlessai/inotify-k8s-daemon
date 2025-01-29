@@ -1,0 +1,26 @@
+apiVersion: skaffold/v2beta29
+kind: Config
+metadata:
+  name: inotify-k8s-daemon
+build:
+  tagPolicy:
+    sha256: {} # uses "latest" as tag
+  artifacts:
+    - image: stainlessai/inotify-k8s-daemon
+      context: .
+      docker:
+        dockerfile: Dockerfile
+  local:
+    push: true
+    useDockerCLI: true
+deploy:
+  helm:
+    releases:
+      - name: inotify-k8s-daemon
+        chartPath: ./helm
+        artifactOverrides:  # use this requires repository:tag to be specified together
+          api.image.image_tag: stainlessai/inotify-k8s-daemon
+          client.image.image_tag: stainlessai/inotify-k8s-daemon
+        valuesFiles:
+          - ./helm/values.yaml
+
