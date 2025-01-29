@@ -7,9 +7,7 @@ import shutil
 import logging
 from pathlib import Path
 import pyinotify
-from daemon import DaemonContext
 import signal
-import lockfile
 
 # Configure logging
 logging.basicConfig(
@@ -30,6 +28,7 @@ class FileHandler(pyinotify.ProcessEvent):
         self.target_dir = Path(target_dir)
         self.timeout = timeout
         self.pending_files = {}
+        self.running = True
 
     def process_IN_CREATE(self, event):
         """Handle file creation events"""
@@ -89,6 +88,10 @@ class FileHandler(pyinotify.ProcessEvent):
         for filepath in files_to_remove:
             del self.pending_files[filepath]
 
+    def stop(self):
+        """Stop the file handler"""
+        self.running = False
+
 
 def run_watcher(source_dir, target_dir):
     """Main function to run the file watcher"""
@@ -109,8 +112,16 @@ def run_watcher(source_dir, target_dir):
         logger.info(f"Starting to watch directory: {source_dir}")
         logger.info(f"Target directory: {target_dir}")
 
-        # Process events forever
-        while True:
+        # Set up signal handlers for graceful shutdown
+        def signal_handler(signum, frame):
+            logger.info(f"Received signal {signum}. Shutting down...")
+            handler.stop()
+
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+
+        # Process events until stopped
+        while handler.running:
             notifier.process_events()
             if notifier.check_events():
                 notifier.read_events()
@@ -119,7 +130,9 @@ def run_watcher(source_dir, target_dir):
             handler.check_pending_files()
 
             # Small sleep to prevent high CPU usage
-            time.sleep(0.1)
+            time.sleep(0.3)
+
+        logger.info("File watcher shutting down...")
 
     except Exception as e:
         logger.error(f"Error in watcher: {str(e)}")
@@ -134,6 +147,9 @@ def main():
     source_dir = sys.argv[1]
     target_dir = sys.argv[2]
 
+    logger.info("source_dir: " + source_dir)
+    logger.info("target_dir: " + target_dir)
+
     # Validate directories
     if not os.path.isdir(source_dir):
         print(f"Error: Source directory {source_dir} does not exist")
@@ -143,22 +159,9 @@ def main():
         print(f"Error: Target directory {target_dir} does not exist")
         sys.exit(1)
 
-    # Create daemon context
-    context = DaemonContext(
-        working_directory='/',
-        umask=0o002,
-        pidfile=lockfile.FileLock('/var/run/file_watcher.pid'),
-        signal_map={
-            signal.SIGTERM: lambda signo, frame: sys.exit(0),
-            signal.SIGINT: lambda signo, frame: sys.exit(0),
-        }
-    )
-
-    # Start daemon
-    with context:
-        run_watcher(source_dir, target_dir)
+    # Run the watcher directly
+    run_watcher(source_dir, target_dir)
 
 
 if __name__ == "__main__":
-    print("HALLO")
     main()

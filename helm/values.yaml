@@ -16,11 +16,11 @@ resources:
 # Default volumes and mounts
 volumes:
   - name: source-dir
-    hostPath:
-      path: /path/on/host/source
+    emptyDir:
+      sizeLimit: 500Mi
   - name: target-dir
-    hostPath:
-      path: /path/on/host/target
+    emptyDir:
+      sizeLimit: 500Mi
 
 volumeMounts:
   - name: source-dir
@@ -31,9 +31,3 @@ volumeMounts:
 # Extra volumes and mounts that can be added through values
 extraVolumes: []
 extraVolumeMounts: []
-
-# Security context
-#securityContext:
-#  runAsUser: 100
-#  runAsGroup: 100
-#  fsGroup: 100

@@ -11,5 +11,5 @@ RUN chmod +x /app/file_watcher.py
 WORKDIR /app
 
 # Run the watcher script
-ENTRYPOINT ["/usr/local/bin/python3", "/app/file_watcher.py"]
-CMD ["/watch/source", "/watch/target"]
+ENTRYPOINT ["python3", "/app/file_watcher.py"]
+CMD ["/opt", "/tmp"]
