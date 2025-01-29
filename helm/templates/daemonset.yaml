@@ -1,10 +1,11 @@
 apiVersion: apps/v1
-kind: DaemonSet
+kind: Deployment
 metadata:
   name: {{ include "file-watcher.fullname" . }}
   labels:
     {{- include "file-watcher.labels" . | nindent 4 }}
 spec:
+  replicas: 1
   selector:
     matchLabels:
       {{- include "file-watcher.selectorLabels" . | nindent 6 }}
