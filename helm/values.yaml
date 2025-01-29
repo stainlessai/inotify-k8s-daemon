@@ -24,9 +24,19 @@ volumes:
 
 volumeMounts:
   - name: source-dir
-    mountPath: /watch/source
+    mountPath: /watch/source_root
   - name: target-dir
-    mountPath: /watch/target
+    mountPath: /watch/target_root
+
+subpaths:
+  source:
+    create: true
+    path: '/create/me'
+  target:
+    create: false
+    path: '/create/me/too'
+
+debug: false
 
 # Extra volumes and mounts that can be added through values
 extraVolumes: []

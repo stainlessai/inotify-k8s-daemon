@@ -11,7 +11,7 @@ import signal
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=os.getenv('DEBUG_LEVEL', 'INFO'),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler('file_watcher.log'),
@@ -93,6 +93,38 @@ class FileHandler(pyinotify.ProcessEvent):
         self.running = False
 
 
+def validate_and_create_path(base_dir, subpath, create_dirs=False):
+    """Validate and create full path from base directory and subpath"""
+    logger.debug("entering validate_and_create_path")
+    logger.debug(f"base_dir: {base_dir}")
+    logger.debug(f"subpath: {subpath}")
+    logger.debug(f"create_dirs: {create_dirs}")
+
+    full_path = Path(f"{base_dir}/{subpath}")
+
+    # Convert to absolute path and check if it's still under base_dir
+    full_path = full_path.resolve()
+    base_path = Path(base_dir).resolve()
+
+    logger.debug(f"full_path: {full_path}")
+    logger.debug(f"base_path: {base_path}")
+
+    if not str(full_path).startswith(str(base_path)):
+        raise ValueError(f"Subpath '{subpath}' attempts to escape base directory in '{full_path}'")
+
+    # Create directory if it doesn't exist
+    if not full_path.exists():
+        if create_dirs:
+            logger.info("Creating directory: " + str(full_path) + " ...")
+            full_path.mkdir(parents=True, exist_ok=True)
+        else:
+            raise ValueError(f"Path {full_path} does not exist")
+    elif not full_path.is_dir():
+        raise ValueError(f"Path {full_path} exists but is not a directory")
+
+    return str(full_path)
+
+
 def run_watcher(source_dir, target_dir):
     """Main function to run the file watcher"""
     try:
@@ -144,23 +176,40 @@ def main():
         print("Usage: script.py <source_directory> <target_directory>")
         sys.exit(1)
 
-    source_dir = sys.argv[1]
-    target_dir = sys.argv[2]
+    base_source_dir = sys.argv[1]
+    base_target_dir = sys.argv[2]
 
-    logger.info("source_dir: " + source_dir)
-    logger.info("target_dir: " + target_dir)
+    logger.debug("base_source_dir: " + base_source_dir)
+    logger.debug("base_target_dir: " + base_target_dir)
 
-    # Validate directories
-    if not os.path.isdir(source_dir):
-        print(f"Error: Source directory {source_dir} does not exist")
+    # Get subpaths from environment variables
+    source_subpath = os.getenv('SOURCE_SUBPATH', '')
+    target_subpath = os.getenv('TARGET_SUBPATH', '')
+
+    try:
+        create_subpaths_source = os.getenv('CREATE_SUBPATHS_SOURCE', 'false').lower() == 'true'
+        create_subpaths_target = os.getenv('CREATE_SUBPATHS_TARGET', 'false').lower() == 'true'
+
+        # Validate and create full paths
+        source_dir = validate_and_create_path(base_source_dir,
+                                              source_subpath,
+                                              create_dirs=create_subpaths_source)
+        target_dir = validate_and_create_path(base_target_dir,
+                                              target_subpath,
+                                              create_dirs=create_subpaths_target)
+
+        logger.info(f"Full source path: {source_dir}")
+        logger.info(f"Full target path: {target_dir}")
+
+        # Run the watcher
+        run_watcher(source_dir, target_dir)
+
+    except ValueError as e:
+        logger.error(f"Configuration error: {str(e)}")
         sys.exit(1)
-
-    if not os.path.isdir(target_dir):
-        print(f"Error: Target directory {target_dir} does not exist")
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
         sys.exit(1)
-
-    # Run the watcher directly
-    run_watcher(source_dir, target_dir)
 
 
 if __name__ == "__main__":

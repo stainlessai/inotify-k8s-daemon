@@ -12,4 +12,4 @@ WORKDIR /app
 
 # Run the watcher script
 ENTRYPOINT ["python3", "/app/file_watcher.py"]
-CMD ["/opt", "/tmp"]
+CMD ["/watch/source_root", "/watch/target_root"]
