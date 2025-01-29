@@ -30,7 +30,7 @@ volumeMounts:
 
 subpaths:
   source:
-    create: true
+    create: false
     path: '/create/me'
   target:
     create: false
