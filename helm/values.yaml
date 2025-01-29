@@ -38,6 +38,12 @@ subpaths:
 
 debug: false
 
+# Watch subdirectories of source also
+recursive: true
+
+# TODO implement: run rsync on startup
+sync_on_startup: false
+
 # Extra volumes and mounts that can be added through values
 extraVolumes: []
 extraVolumeMounts: []

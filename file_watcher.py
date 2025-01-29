@@ -125,7 +125,7 @@ def validate_and_create_path(base_dir, subpath, create_dirs=False):
     return str(full_path)
 
 
-def run_watcher(source_dir, target_dir):
+def run_watcher(source_dir, target_dir, recursive=True):
     """Main function to run the file watcher"""
     try:
         # Create an instance of watch manager
@@ -139,7 +139,7 @@ def run_watcher(source_dir, target_dir):
 
         # Add watch on source directory
         mask = pyinotify.IN_CREATE | pyinotify.IN_MODIFY | pyinotify.IN_CLOSE_WRITE
-        wm.add_watch(source_dir, mask, rec=False, auto_add=False)
+        wm.add_watch(source_dir, mask, rec=recursive, auto_add=False)
 
         logger.info(f"Starting to watch directory: {source_dir}")
         logger.info(f"Target directory: {target_dir}")
@@ -185,6 +185,7 @@ def main():
     # Get subpaths from environment variables
     source_subpath = os.getenv('SOURCE_SUBPATH', '')
     target_subpath = os.getenv('TARGET_SUBPATH', '')
+    recursive = os.getenv('RECURSIVE', 'true').lower() == 'true'
 
     try:
         create_subpaths_source = os.getenv('CREATE_SUBPATHS_SOURCE', 'false').lower() == 'true'
@@ -202,7 +203,7 @@ def main():
         logger.info(f"Full target path: {target_dir}")
 
         # Run the watcher
-        run_watcher(source_dir, target_dir)
+        run_watcher(source_dir, target_dir, recursive)
 
     except ValueError as e:
         logger.error(f"Configuration error: {str(e)}")

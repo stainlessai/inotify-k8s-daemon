@@ -50,6 +50,12 @@ spec:
               {{- else }}
               value: "False"
               {{- end }}
+            - name: RECURSIVE
+              {{- if .Values.recursive }}
+              value: "True"
+              {{- else }}
+              value: "False"
+              {{- end }}
       volumes:
         {{- toYaml .Values.volumes | nindent 8 }}
         {{- if .Values.extraVolumes }}
