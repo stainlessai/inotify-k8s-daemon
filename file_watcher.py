@@ -139,7 +139,7 @@ def run_watcher(source_dir, target_dir, recursive=True):
 
         # Add watch on source directory
         mask = pyinotify.IN_CREATE | pyinotify.IN_MODIFY | pyinotify.IN_CLOSE_WRITE
-        wm.add_watch(source_dir, mask, rec=recursive, auto_add=False)
+        wm.add_watch(source_dir, mask, rec=recursive, auto_add=recursive)
 
         logger.info(f"Starting to watch directory: {source_dir}")
         logger.info(f"Target directory: {target_dir}")
