@@ -173,7 +173,7 @@ class FileHandler(FileSystemEventHandler):
 
         # Gather files that are ready to process
         with self.pending_files_lock:
-            logger.debug(f"Current pending files count: {len(self.pending_files)}")
+            # logger.debug(f"Current pending files count: {len(self.pending_files)}")
             for filepath, (start_time, retry_count) in self.pending_files.items():
                 wait_time = current_time - start_time
                 logger.debug(f"File {filepath} has been waiting for {wait_time:.2f}s (timeout: {self.timeout}s)")
@@ -181,7 +181,7 @@ class FileHandler(FileSystemEventHandler):
                     files_to_process.append((filepath, start_time, retry_count))
 
         if not files_to_process:
-            logger.debug("No files ready for processing")
+            # logger.debug("No files ready for processing")
             return
 
         logger.info(f"Submitting {len(files_to_process)} files for parallel processing")
