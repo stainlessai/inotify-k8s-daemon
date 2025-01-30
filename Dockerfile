@@ -1,7 +1,7 @@
 FROM python:3.11-slim
 
 # Install required packages
-RUN pip install --no-cache-dir pyinotify python-daemon lockfile
+RUN pip install --no-cache-dir watchdog lockfile
 
 # Copy the watcher script
 COPY file_watcher.py /app/file_watcher.py

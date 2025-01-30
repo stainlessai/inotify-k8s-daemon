@@ -31,12 +31,21 @@ class FileHandler(FileSystemEventHandler):
         self.running = True
 
     def on_created(self, event):
-        if event.is_directory:
-            return
-
         filepath = Path(event.src_path)
-        logger.info(f"File created: {filepath}")
-        self.pending_files[filepath] = time.time()
+        logger.info(f"Created: {filepath}")
+
+        if event.is_directory:
+            try:
+                relative_path = filepath.relative_to(self.source_dir)
+                target_path = self.target_dir / relative_path
+                target_path.mkdir(parents=True, exist_ok=True)
+                logger.info(f"Created directory: {target_path}")
+            except (IOError, OSError) as e:
+                logger.error(f"Error creating directory {filepath}: {str(e)}")
+            except ValueError as e:
+                logger.error(f"Path error with {filepath}: {str(e)}")
+        else:
+            self.pending_files[filepath] = time.time()
 
     def on_modified(self, event):
         if event.is_directory:
@@ -45,6 +54,50 @@ class FileHandler(FileSystemEventHandler):
         filepath = Path(event.src_path)
         logger.info(f"File modified: {filepath}")
         self.pending_files[filepath] = time.time()
+
+    def on_moved(self, event):
+        src_path = Path(event.src_path)
+        dest_path = Path(event.dest_path)
+
+        try:
+            src_relative = src_path.relative_to(self.source_dir)
+            dest_relative = dest_path.relative_to(self.source_dir)
+
+            src_target = self.target_dir / src_relative
+            dest_target = self.target_dir / dest_relative
+
+            if src_target.exists():
+                if event.is_directory:
+                    shutil.move(str(src_target), str(dest_target))
+                    logger.info(f"Moved directory from {src_target} to {dest_target}")
+                else:
+                    shutil.move(str(src_target), str(dest_target))
+                    logger.info(f"Moved file from {src_target} to {dest_target}")
+        except (IOError, OSError) as e:
+            logger.error(f"Error moving {src_path} to {dest_path}: {str(e)}")
+        except ValueError as e:
+            logger.error(f"Path error with move operation: {str(e)}")
+
+    def on_deleted(self, event):
+        filepath = Path(event.src_path)
+        try:
+            relative_path = filepath.relative_to(self.source_dir)
+            target_path = self.target_dir / relative_path
+
+            if target_path.exists():
+                if event.is_directory:
+                    shutil.rmtree(target_path)
+                    logger.info(f"Removed directory: {target_path}")
+                else:
+                    target_path.unlink()
+                    logger.info(f"Removed file: {target_path}")
+
+                if filepath in self.pending_files:
+                    del self.pending_files[filepath]
+        except (IOError, OSError) as e:
+            logger.error(f"Error removing {filepath}: {str(e)}")
+        except ValueError as e:
+            logger.error(f"Path error with {filepath}: {str(e)}")
 
     def process_pending_files(self):
         current_time = time.time()
@@ -73,7 +126,6 @@ class FileHandler(FileSystemEventHandler):
             del self.pending_files[filepath]
 
     def stop(self):
-        """Stop the file handler"""
         self.running = False
 
 
@@ -94,9 +146,8 @@ def validate_and_create_path(base_dir, subpath, create_dirs=False):
     logger.debug(f"base_path: {base_path}")
 
     if not str(full_path).startswith(str(base_path)):
-        raise ValueError(f"Subpath '{subpath}' attempts to escape base directory in '{full_path}'")
+        raise ValueError(f"Subpath '{subpath}' attempts to escape base directory")
 
-    # Create directory if it doesn't exist
     if not full_path.exists():
         if create_dirs:
             logger.info(f"Creating directory: {full_path} ...")
