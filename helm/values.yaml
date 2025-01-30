@@ -51,6 +51,9 @@ usePollingObserver: true
 # Maximum number of file retries
 maxRetries: 10
 
+# Max workers for multithreaded execution
+maxWorkers: 5
+
 # Extra volumes and mounts that can be added through values
 extraVolumes: []
 extraVolumeMounts: []
