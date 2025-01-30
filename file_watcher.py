@@ -134,8 +134,9 @@ class FileHandler(FileSystemEventHandler):
             logger.debug(f"[Thread-{thread_id}] Attempting to copy file: {filepath} ({source_size} bytes)")
             copy_start_time = time.time()
 
-            # Copy the file with metadata
-            shutil.copy2(filepath, target_path)
+            # Copy the file without metadata
+            # FIXME make configurable (some filesystems don't allow metadata copy)
+            shutil.copyfile(filepath, target_path)
 
             copy_duration = time.time() - copy_start_time
             target_size = target_path.stat().st_size
