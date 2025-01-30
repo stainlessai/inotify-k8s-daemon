@@ -6,7 +6,8 @@ import time
 import shutil
 import logging
 from pathlib import Path
-import pyinotify
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
 import signal
 
 # Configure logging
@@ -21,69 +22,52 @@ logging.basicConfig(
 logger = logging.getLogger('FileWatcher')
 
 
-class FileHandler(pyinotify.ProcessEvent):
+class FileHandler(FileSystemEventHandler):
     def __init__(self, source_dir, target_dir, timeout=1):
-        super().__init__()
         self.source_dir = Path(source_dir)
         self.target_dir = Path(target_dir)
         self.timeout = timeout
         self.pending_files = {}
         self.running = True
 
-    def process_IN_CREATE(self, event):
-        """Handle file creation events"""
-        if event.dir:
+    def on_created(self, event):
+        if event.is_directory:
             return
 
-        filepath = Path(event.pathname)
+        filepath = Path(event.src_path)
         logger.info(f"File created: {filepath}")
         self.pending_files[filepath] = time.time()
 
-    def process_IN_MODIFY(self, event):
-        """Handle file modification events"""
-        if event.dir:
+    def on_modified(self, event):
+        if event.is_directory:
             return
 
-        filepath = Path(event.pathname)
+        filepath = Path(event.src_path)
         logger.info(f"File modified: {filepath}")
         self.pending_files[filepath] = time.time()
 
-    def process_IN_CLOSE_WRITE(self, event):
-        """Handle file close events (when writing is finished)"""
-        if event.dir:
-            return
-
-        filepath = Path(event.pathname)
-        if filepath in self.pending_files:
-            try:
-                # Wait a brief moment to ensure writing is complete
-                time.sleep(0.1)
-
-                # Copy the file to target directory
-                target_path = self.target_dir / filepath.name
-                shutil.copy2(filepath, target_path)
-                logger.info(f"Successfully copied {filepath} to {target_path}")
-
-                # Remove from pending files
-                del self.pending_files[filepath]
-
-            except (IOError, OSError) as e:
-                logger.error(f"Error copying {filepath}: {str(e)}")
-
-    def check_pending_files(self):
-        """Check and process any files that might have been missed"""
+    def process_pending_files(self):
         current_time = time.time()
         files_to_remove = []
 
         for filepath, start_time in self.pending_files.items():
             if current_time - start_time > self.timeout:
                 try:
-                    target_path = self.target_dir / filepath.name
-                    shutil.copy2(filepath, target_path)
-                    logger.info(f"Successfully copied pending file {filepath} to {target_path}")
-                    files_to_remove.append(filepath)
+                    if filepath.exists():  # Check if file still exists
+                        relative_path = filepath.relative_to(self.source_dir)
+                        target_path = self.target_dir / relative_path
+
+                        # Create parent directories if they don't exist
+                        target_path.parent.mkdir(parents=True, exist_ok=True)
+
+                        # Copy the file with metadata
+                        shutil.copy2(filepath, target_path)
+                        logger.info(f"Successfully copied {filepath} to {target_path}")
+                        files_to_remove.append(filepath)
                 except (IOError, OSError) as e:
-                    logger.error(f"Error copying pending file {filepath}: {str(e)}")
+                    logger.error(f"Error copying {filepath}: {str(e)}")
+                except ValueError as e:
+                    logger.error(f"Path error with {filepath}: {str(e)}")
 
         for filepath in files_to_remove:
             del self.pending_files[filepath]
@@ -115,7 +99,7 @@ def validate_and_create_path(base_dir, subpath, create_dirs=False):
     # Create directory if it doesn't exist
     if not full_path.exists():
         if create_dirs:
-            logger.info("Creating directory: " + str(full_path) + " ...")
+            logger.info(f"Creating directory: {full_path} ...")
             full_path.mkdir(parents=True, exist_ok=True)
         else:
             raise ValueError(f"Path {full_path} does not exist")
@@ -128,42 +112,31 @@ def validate_and_create_path(base_dir, subpath, create_dirs=False):
 def run_watcher(source_dir, target_dir, recursive=True):
     """Main function to run the file watcher"""
     try:
-        # Create an instance of watch manager
-        wm = pyinotify.WatchManager()
-
-        # Create an instance of file handler
+        # Create the event handler and observer
         handler = FileHandler(source_dir, target_dir)
-
-        # Create notifier
-        notifier = pyinotify.Notifier(wm, handler)
-
-        # Add watch on source directory
-        mask = pyinotify.IN_CREATE | pyinotify.IN_MODIFY | pyinotify.IN_CLOSE_WRITE
-        wm.add_watch(source_dir, mask, rec=recursive, auto_add=recursive)
+        observer = Observer()
+        observer.schedule(handler, source_dir, recursive=recursive)
+        observer.start()
 
         logger.info(f"Starting to watch directory: {source_dir}")
         logger.info(f"Target directory: {target_dir}")
+        logger.info(f"Recursive mode: {recursive}")
 
         # Set up signal handlers for graceful shutdown
         def signal_handler(signum, frame):
             logger.info(f"Received signal {signum}. Shutting down...")
             handler.stop()
+            observer.stop()
 
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
 
-        # Process events until stopped
+        # Main loop
         while handler.running:
-            notifier.process_events()
-            if notifier.check_events():
-                notifier.read_events()
-
-            # Check pending files periodically
-            handler.check_pending_files()
-
-            # Small sleep to prevent high CPU usage
+            handler.process_pending_files()
             time.sleep(0.3)
 
+        observer.join()
         logger.info("File watcher shutting down...")
 
     except Exception as e:
@@ -179,8 +152,8 @@ def main():
     base_source_dir = sys.argv[1]
     base_target_dir = sys.argv[2]
 
-    logger.debug("base_source_dir: " + base_source_dir)
-    logger.debug("base_target_dir: " + base_target_dir)
+    logger.debug(f"base_source_dir: {base_source_dir}")
+    logger.debug(f"base_target_dir: {base_target_dir}")
 
     # Get subpaths from environment variables
     source_subpath = os.getenv('SOURCE_SUBPATH', '')
@@ -192,12 +165,8 @@ def main():
         create_subpaths_target = os.getenv('CREATE_SUBPATHS_TARGET', 'false').lower() == 'true'
 
         # Validate and create full paths
-        source_dir = validate_and_create_path(base_source_dir,
-                                              source_subpath,
-                                              create_dirs=create_subpaths_source)
-        target_dir = validate_and_create_path(base_target_dir,
-                                              target_subpath,
-                                              create_dirs=create_subpaths_target)
+        source_dir = validate_and_create_path(base_source_dir, source_subpath, create_dirs=create_subpaths_source)
+        target_dir = validate_and_create_path(base_target_dir, target_subpath, create_dirs=create_subpaths_target)
 
         logger.info(f"Full source path: {source_dir}")
         logger.info(f"Full target path: {target_dir}")
