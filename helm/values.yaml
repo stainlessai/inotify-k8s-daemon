@@ -30,13 +30,13 @@ volumeMounts:
 
 subpaths:
   source:
-    create: true
-    path: '/create/me'
+    create: false
+    path: ''
   target:
-    create: true
-    path: '/create/me/too'
+    create: false
+    path: ''
 
-debug: true
+debug: false
 
 # Watch subdirectories of source also
 recursive: true
@@ -47,6 +47,9 @@ sync_on_startup: false
 # Use a PollingObserver, e.g., when trying to watch nfs
 # https://github.com/gorakhargosh/watchdog/issues/504
 usePollingObserver: true
+
+# Maximum number of file retries
+maxRetries: 10
 
 # Extra volumes and mounts that can be added through values
 extraVolumes: []

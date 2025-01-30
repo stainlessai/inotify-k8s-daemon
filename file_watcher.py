@@ -24,12 +24,14 @@ logger = logging.getLogger('FileWatcher')
 
 
 class FileHandler(FileSystemEventHandler):
-    def __init__(self, source_dir, target_dir, timeout=1):
+    def __init__(self, source_dir, target_dir, timeout=10):
         self.source_dir = Path(source_dir)
         self.target_dir = Path(target_dir)
         self.timeout = timeout
-        self.pending_files = {}
+        self.pending_files = {}  # {filepath: (start_time, retry_count)}
         self.running = True
+        self.retry_limit = int(os.getenv('RETRY_LIMIT', '10'))
+        logger.info(f"Retry limit: {self.retry_limit}")
 
     def on_created(self, event):
         filepath = Path(event.src_path)
@@ -46,7 +48,7 @@ class FileHandler(FileSystemEventHandler):
             except ValueError as e:
                 logger.error(f"Path error with {filepath}: {str(e)}")
         else:
-            self.pending_files[filepath] = time.time()
+            self.pending_files[filepath] = (time.time(), 0)
 
     def on_modified(self, event):
         if event.is_directory:
@@ -104,7 +106,7 @@ class FileHandler(FileSystemEventHandler):
         current_time = time.time()
         files_to_remove = []
 
-        for filepath, start_time in self.pending_files.items():
+        for filepath, (start_time, retry_count) in self.pending_files.items():
             if current_time - start_time > self.timeout:
                 try:
                     if filepath.exists():  # Check if file still exists
@@ -118,10 +120,20 @@ class FileHandler(FileSystemEventHandler):
                         shutil.copy2(filepath, target_path)
                         logger.info(f"Successfully copied {filepath} to {target_path}")
                         files_to_remove.append(filepath)
+                    else:
+                        logger.warning(f"File {filepath} no longer exists")
+                        files_to_remove.append(filepath)
                 except (IOError, OSError) as e:
-                    logger.error(f"Error copying {filepath}: {str(e)}")
+                    retry_count += 1
+                    if retry_count >= self.retry_limit:
+                        logger.error(f"Failed to copy {filepath} after {retry_count} attempts: {str(e)}")
+                        files_to_remove.append(filepath)
+                    else:
+                        logger.warning(f"Retry {retry_count}/{self.retry_limit} for {filepath}: {str(e)}")
+                        self.pending_files[filepath] = (time.time(), retry_count)
                 except ValueError as e:
                     logger.error(f"Path error with {filepath}: {str(e)}")
+                    files_to_remove.append(filepath)
 
         for filepath in files_to_remove:
             del self.pending_files[filepath]
