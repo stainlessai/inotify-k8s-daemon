@@ -30,19 +30,23 @@ volumeMounts:
 
 subpaths:
   source:
-    create: false
+    create: true
     path: '/create/me'
   target:
-    create: false
+    create: true
     path: '/create/me/too'
 
-debug: false
+debug: true
 
 # Watch subdirectories of source also
 recursive: true
 
 # TODO implement: run rsync on startup
 sync_on_startup: false
+
+# Use a PollingObserver, e.g., when trying to watch nfs
+# https://github.com/gorakhargosh/watchdog/issues/504
+usePollingObserver: true
 
 # Extra volumes and mounts that can be added through values
 extraVolumes: []

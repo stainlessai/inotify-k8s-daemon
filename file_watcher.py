@@ -6,7 +6,7 @@ import time
 import shutil
 import logging
 from pathlib import Path
-from watchdog.observers import Observer
+from watchdog.observers import Observer, PollingObserver
 from watchdog.events import FileSystemEventHandler
 import signal
 
@@ -165,7 +165,12 @@ def run_watcher(source_dir, target_dir, recursive=True):
     try:
         # Create the event handler and observer
         handler = FileHandler(source_dir, target_dir)
-        observer = Observer()
+
+        if os.getenv('POLLING_OBSERVER', 'False').lower() == 'true':
+            observer = PollingObserver()
+        else:
+            observer = Observer()
+
         observer.schedule(handler, source_dir, recursive=recursive)
         observer.start()
 

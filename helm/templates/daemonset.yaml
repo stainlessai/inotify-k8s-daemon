@@ -40,19 +40,25 @@ spec:
               {{- end }}
             - name: CREATE_SUBPATHS_SOURCE
               {{- if .Values.subpaths.source.create }}
-              value: "True"
+              value: {{ .Values.subpaths.source.create }}
               {{- else }}
               value: "False"
               {{- end }}
             - name: CREATE_SUBPATHS_TARGET
               {{- if .Values.subpaths.target.create }}
-              value: "True"
+              value: {{ .Values.subpaths.target.create }}
               {{- else }}
               value: "False"
               {{- end }}
             - name: RECURSIVE
               {{- if .Values.recursive }}
-              value: "True"
+              value: {{ .Values.recursive }}
+              {{- else }}
+              value: "False"
+              {{- end }}
+            - name: POLLING_OBSERVER
+              {{- if .Values.usePollingObserver }}
+              value: {{ .Values.usePollingObserver }}
               {{- else }}
               value: "False"
               {{- end }}
