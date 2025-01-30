@@ -6,7 +6,8 @@ import time
 import shutil
 import logging
 from pathlib import Path
-from watchdog.observers import Observer, PollingObserver
+from watchdog.observers import Observer
+from watchdog.observers.polling import PollingObserver
 from watchdog.events import FileSystemEventHandler
 import signal
 
