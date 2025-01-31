@@ -68,7 +68,7 @@ def run_watcher(source_dir, target_dir, recursive=True):
             synchronizer = Synchronizer(source_dir, target_dir,
                                         max_workers=max_workers,
                                         sync_interval=sync_interval)
-            synchronizer.start()
+            synchronizer.start_once()
 
         # Create the event handler and observer
         handler = FileHandler(source_dir, target_dir)

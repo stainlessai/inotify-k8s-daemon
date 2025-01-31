@@ -123,11 +123,13 @@ class Synchronizer:
         logger.info(f"Synchronization complete. Successes: {success_count}, Failures: {failure_count}")
         return success_count, failure_count
 
-    def run_background_sync(self):
+    def run_background_sync(self, single=False):
         """Run continuous background synchronization"""
         while self.running:
             try:
                 self.synchronize_once()
+                if single:
+                    self.running = False
 
                 # Sleep for the specified interval
                 for _ in range(self.sync_interval):
@@ -144,6 +146,13 @@ class Synchronizer:
         """Start background synchronization"""
         logger.info("Starting background synchronization")
         self.background_thread = threading.Thread(target=self.run_background_sync)
+        self.background_thread.daemon = True  # Thread will exit when main program exits
+        self.background_thread.start()
+
+    def start_once(self):
+        """Start background synchronization one time"""
+        logger.info("Starting background synchronization for single sync op")
+        self.background_thread = threading.Thread(target=self.run_background_sync, kwargs={'single': True})
         self.background_thread.daemon = True  # Thread will exit when main program exits
         self.background_thread.start()
 
