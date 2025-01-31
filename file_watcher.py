@@ -55,7 +55,7 @@ class FileHandler(FileSystemEventHandler):
             except ValueError as e:
                 logger.error(f"Path error with {filepath}: {str(e)}")
         else:
-            self.pending_files[filepath] = (time.time(), 0)
+            self.pending_files[filepath] = (time.time(), 0)  # Already using tuple format
 
     def on_modified(self, event):
         if event.is_directory:
@@ -63,7 +63,7 @@ class FileHandler(FileSystemEventHandler):
 
         filepath = Path(event.src_path)
         logger.info(f"File modified: {filepath}")
-        self.pending_files[filepath] = time.time()
+        self.pending_files[filepath] = (time.time(), 0)  # Fix: Use tuple instead of float
 
     def on_moved(self, event):
         src_path = Path(event.src_path)
