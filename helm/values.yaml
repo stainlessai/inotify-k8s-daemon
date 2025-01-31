@@ -54,6 +54,9 @@ maxRetries: 10
 # Max workers for multithreaded execution
 maxWorkers: 5
 
+# Run the synchronizer to find closed files that need synchronizing
+runSynchronizer: true
+
 # Extra volumes and mounts that can be added through values
 extraVolumes: []
 extraVolumeMounts: []

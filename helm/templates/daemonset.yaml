@@ -66,6 +66,12 @@ spec:
               value: '{{ .Values.maxRetries }}'
             - name: MAX_WORKERS
               value: '{{ .Values.maxWorkers }}'
+            - name: SYNCHRONIZE
+              {{- if .Values.runSynchronizer }}
+              value:  "True"
+              {{- else }}
+              value: "False"
+              {{- end }}
 
       volumes:
         {{- toYaml .Values.volumes | nindent 8 }}

@@ -7,8 +7,7 @@ import shutil
 import logging
 import traceback
 from pathlib import Path
-from watchdog.observers import Observer
-from watchdog.observers.polling import PollingObserver
+
 from watchdog.events import FileSystemEventHandler
 from concurrent.futures import ThreadPoolExecutor
 import threading

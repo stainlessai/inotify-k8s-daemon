@@ -1,6 +1,7 @@
 import concurrent.futures
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import shutil
 import logging
@@ -10,14 +11,18 @@ logger = logging.getLogger('DirectorySynchronizer')
 
 
 class Synchronizer:
-    def __init__(self, source_dir, target_dir, max_workers=4):
+    def __init__(self, source_dir, target_dir, max_workers=4, sync_interval=300):
         self.source_dir = Path(source_dir)
         self.target_dir = Path(target_dir)
         self.max_workers = max_workers
+        self.sync_interval = sync_interval  # Time between syncs in seconds
         self.retry_limit = int(os.getenv('RETRY_LIMIT', '10'))
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         self.copy_lock = threading.Lock()
-        logger.info(f"Initialized Synchronizer with max_workers={max_workers}")
+        self.running = True
+        self.background_thread = None
+
+        logger.info(f"Initialized Synchronizer with max_workers={max_workers}, sync_interval={sync_interval}s")
         logger.debug(f"Source directory: {source_dir}")
         logger.debug(f"Target directory: {target_dir}")
 
@@ -28,6 +33,9 @@ class Synchronizer:
 
         # Recursively get all files in source directory
         for source_file in self.source_dir.rglob('*'):
+            if not self.running:
+                return []
+
             if source_file.is_file():
                 # Calculate relative path to maintain directory structure
                 rel_path = source_file.relative_to(self.source_dir)
@@ -42,6 +50,9 @@ class Synchronizer:
 
     def copy_file_with_retry(self, source_file, retry_count=0):
         """Copy a single file with retry mechanism"""
+        if not self.running:
+            return False
+
         try:
             relative_path = source_file.relative_to(self.source_dir)
             target_path = self.target_dir / relative_path
@@ -70,8 +81,11 @@ class Synchronizer:
             logger.error(f"Unexpected error copying {source_file}: {str(e)}")
             return False
 
-    def synchronize(self):
-        """Perform the directory synchronization"""
+    def synchronize_once(self):
+        """Perform a single directory synchronization"""
+        if not self.running:
+            return 0, 0
+
         logger.info("Starting directory synchronization")
 
         # Find files that need to be synchronized
@@ -79,7 +93,7 @@ class Synchronizer:
 
         if not missing_files:
             logger.info("No files need synchronization")
-            return
+            return 0, 0
 
         # Create a future for each file copy operation
         future_to_file = {
@@ -93,6 +107,9 @@ class Synchronizer:
 
         # Process completed futures
         for future in concurrent.futures.as_completed(future_to_file):
+            if not self.running:
+                break
+
             source_file = future_to_file[future]
             try:
                 if future.result():
@@ -106,8 +123,35 @@ class Synchronizer:
         logger.info(f"Synchronization complete. Successes: {success_count}, Failures: {failure_count}")
         return success_count, failure_count
 
-    def close(self):
-        """Clean up resources"""
-        logger.info("Closing Synchronizer")
+    def run_background_sync(self):
+        """Run continuous background synchronization"""
+        while self.running:
+            try:
+                self.synchronize_once()
+
+                # Sleep for the specified interval
+                for _ in range(self.sync_interval):
+                    if not self.running:
+                        break
+                    time.sleep(1)
+
+            except Exception as e:
+                logger.error(f"Error in background sync: {str(e)}")
+                if self.running:
+                    time.sleep(10)  # Wait before retry on error
+
+    def start(self):
+        """Start background synchronization"""
+        logger.info("Starting background synchronization")
+        self.background_thread = threading.Thread(target=self.run_background_sync)
+        self.background_thread.daemon = True  # Thread will exit when main program exits
+        self.background_thread.start()
+
+    def stop(self):
+        """Stop background synchronization and clean up"""
+        logger.info("Stopping Synchronizer")
+        self.running = False
+        if self.background_thread:
+            self.background_thread.join(timeout=30)  # Wait up to 30 seconds
         self.executor.shutdown(wait=True)
-        logger.debug("ThreadPoolExecutor shut down")
+        logger.debug("Synchronizer stopped")

@@ -1,6 +1,16 @@
 import logging
 import os
+import signal
 import sys
+import time
+import traceback
+from pathlib import Path
+
+from watchdog.observers import Observer
+from watchdog.observers.polling import PollingObserver
+
+from file_watcher import FileHandler
+from synchronizer import Synchronizer
 
 # Configure logging
 logging.basicConfig(
@@ -46,8 +56,20 @@ def validate_and_create_path(base_dir, subpath, create_dirs=False):
 
 
 def run_watcher(source_dir, target_dir, recursive=True):
-    """Main function to run the file watcher"""
+    """Main function to run the file watcher and synchronizer"""
+    synchronizer = None
+
     try:
+        # Start synchronizer if enabled
+        if os.getenv('SYNCHRONIZE', 'false').lower() == 'true':
+            max_workers = int(os.getenv('SYNC_MAX_WORKERS', '4'))
+            sync_interval = int(os.getenv('SYNC_INTERVAL', '300'))  # 5 minutes default
+            logger.info(f"Starting background synchronizer (interval: {sync_interval}s)")
+            synchronizer = Synchronizer(source_dir, target_dir,
+                                        max_workers=max_workers,
+                                        sync_interval=sync_interval)
+            synchronizer.start()
+
         # Create the event handler and observer
         handler = FileHandler(source_dir, target_dir)
 
@@ -68,6 +90,8 @@ def run_watcher(source_dir, target_dir, recursive=True):
             logger.info(f"Received signal {signum}. Shutting down...")
             handler.stop()
             observer.stop()
+            if synchronizer:
+                synchronizer.stop()
 
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
@@ -78,11 +102,17 @@ def run_watcher(source_dir, target_dir, recursive=True):
             time.sleep(0.3)
 
         observer.join()
-        logger.info("File watcher shutting down...")
+
+        # Clean up synchronizer if it was started
+        if synchronizer:
+            synchronizer.stop()
+
+        logger.info("Services shut down successfully")
 
     except Exception as e:
-        logger.error(f"Error in watcher: {str(e)}")
-        traceback.print_exc()
+        logger.error(f"Error in services: {str(e)}")
+        if synchronizer:
+            synchronizer.stop()
         sys.exit(1)
 
 
