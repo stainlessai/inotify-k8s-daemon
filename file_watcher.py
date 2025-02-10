@@ -7,6 +7,7 @@ import shutil
 import logging
 import traceback
 from pathlib import Path
+from queue import Queue, Empty
 
 from watchdog.events import FileSystemEventHandler
 from concurrent.futures import ThreadPoolExecutor
@@ -30,6 +31,29 @@ class FileHandler(FileSystemEventHandler):
         logger.info(f"Max workers: {self.max_workers}")
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         self.pending_files_lock = threading.Lock()
+        # Add an event queue for incoming events
+        self.event_queue = Queue()
+        # Start event processing thread
+        self.event_thread = threading.Thread(target=self._process_event_queue, daemon=True)
+        self.event_thread.start()
+
+    def _process_event_queue(self):
+        """Process events from the queue in a dedicated thread"""
+        while self.running:
+            try:
+                event_type, filepath = self.event_queue.get(timeout=1)
+                with self.pending_files_lock:
+                    if event_type == 'created' or event_type == 'modified':
+                        self.pending_files[filepath] = (time.time(), 0)
+                    elif event_type == 'deleted':
+                        if filepath in self.pending_files:
+                            del self.pending_files[filepath]
+                self.event_queue.task_done()
+            except Empty:
+                continue
+            except Exception as e:
+                logger.error(f"Error processing event: {e}")
+                traceback.print_exc()
 
     def on_created(self, event):
         filepath = Path(event.src_path)
@@ -46,8 +70,8 @@ class FileHandler(FileSystemEventHandler):
             except ValueError as e:
                 logger.error(f"Path error with {filepath}: {str(e)}")
         else:
-            with self.pending_files_lock:
-                self.pending_files[filepath] = (time.time(), 0)
+            # Queue the event instead of processing directly
+            self.event_queue.put(('created', filepath))
 
     def on_modified(self, event):
         if event.is_directory:
@@ -55,31 +79,7 @@ class FileHandler(FileSystemEventHandler):
 
         filepath = Path(event.src_path)
         logger.info(f"File modified: {filepath}")
-        with self.pending_files_lock:
-            self.pending_files[filepath] = (time.time(), 0)
-
-    def on_moved(self, event):
-        src_path = Path(event.src_path)
-        dest_path = Path(event.dest_path)
-
-        try:
-            src_relative = src_path.relative_to(self.source_dir)
-            dest_relative = dest_path.relative_to(self.source_dir)
-
-            src_target = self.target_dir / src_relative
-            dest_target = self.target_dir / dest_relative
-
-            if src_target.exists():
-                if event.is_directory:
-                    shutil.move(str(src_target), str(dest_target))
-                    logger.info(f"Moved directory from {src_target} to {dest_target}")
-                else:
-                    shutil.move(str(src_target), str(dest_target))
-                    logger.info(f"Moved file from {src_target} to {dest_target}")
-        except (IOError, OSError) as e:
-            logger.error(f"Error moving {src_path} to {dest_path}: {str(e)}")
-        except ValueError as e:
-            logger.error(f"Path error with move operation: {str(e)}")
+        self.event_queue.put(('modified', filepath))
 
     def on_deleted(self, event):
         filepath = Path(event.src_path)
@@ -95,9 +95,7 @@ class FileHandler(FileSystemEventHandler):
                     target_path.unlink()
                     logger.info(f"Removed file: {target_path}")
 
-                with self.pending_files_lock:
-                    if filepath in self.pending_files:
-                        del self.pending_files[filepath]
+                self.event_queue.put(('deleted', filepath))
         except (IOError, OSError) as e:
             logger.error(f"Error removing {filepath}: {str(e)}")
         except ValueError as e:
@@ -213,4 +211,5 @@ class FileHandler(FileSystemEventHandler):
 
     def stop(self):
         self.running = False
-        self.executor.shutdown(wait=True)  # Wait for all pending tasks to complete
+        self.event_thread.join()
+        self.executor.shutdown(wait=True)
