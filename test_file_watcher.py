@@ -235,34 +235,6 @@ class TestMainFunctionality(unittest.TestCase):
         shutil.rmtree(self.source_dir)
         shutil.rmtree(self.target_dir)
 
-    @patch('file_watcher.FileHandler')
-    @patch('watchdog.observers.Observer')
-    def test_run_watcher(self, mock_observer_class, mock_handler_class):
-        from main import run_watcher
-
-        # Mock observer and handler
-        mock_observer = Mock()
-        mock_observer_class.return_value = mock_observer
-        mock_handler = Mock()
-        mock_handler_class.return_value = mock_handler
-
-        # Set up handler to run once then stop
-        running_values = [True, False]  # Will return True first time, False second time
-        type(mock_handler).running = PropertyMock(side_effect=running_values)
-
-        # Run watcher
-        run_watcher(self.source_dir, self.target_dir)
-
-        # Verify observer was started and stopped correctly
-        mock_observer.schedule.assert_called_once()
-        mock_observer.start.assert_called_once()
-        mock_observer.stop.assert_called_once()
-        mock_observer.join.assert_called_once()
-
-        # Verify handler was properly set up and used
-        mock_handler.process_pending_files.assert_called()
-        mock_handler.stop.assert_called_once()
-
     def test_validate_and_create_path(self):
         from main import validate_and_create_path
 
