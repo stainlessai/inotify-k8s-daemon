@@ -46,7 +46,8 @@ class FileHandler(FileSystemEventHandler):
             except ValueError as e:
                 logger.error(f"Path error with {filepath}: {str(e)}")
         else:
-            self.pending_files[filepath] = (time.time(), 0)  # Already using tuple format
+            with self.pending_files_lock:
+                self.pending_files[filepath] = (time.time(), 0)
 
     def on_modified(self, event):
         if event.is_directory:
@@ -54,7 +55,8 @@ class FileHandler(FileSystemEventHandler):
 
         filepath = Path(event.src_path)
         logger.info(f"File modified: {filepath}")
-        self.pending_files[filepath] = (time.time(), 0)  # Fix: Use tuple instead of float
+        with self.pending_files_lock:
+            self.pending_files[filepath] = (time.time(), 0)
 
     def on_moved(self, event):
         src_path = Path(event.src_path)
@@ -93,8 +95,9 @@ class FileHandler(FileSystemEventHandler):
                     target_path.unlink()
                     logger.info(f"Removed file: {target_path}")
 
-                if filepath in self.pending_files:
-                    del self.pending_files[filepath]
+                with self.pending_files_lock:
+                    if filepath in self.pending_files:
+                        del self.pending_files[filepath]
         except (IOError, OSError) as e:
             logger.error(f"Error removing {filepath}: {str(e)}")
         except ValueError as e:
