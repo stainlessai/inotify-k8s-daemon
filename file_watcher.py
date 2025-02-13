@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import concurrent
-import sys
 import os
 import time
 import shutil
@@ -12,7 +11,6 @@ from queue import Queue, Empty
 from watchdog.events import FileSystemEventHandler
 from concurrent.futures import ThreadPoolExecutor
 import threading
-import signal
 
 logger = logging.getLogger('FileWatcher')
 
@@ -26,6 +24,7 @@ class FileHandler(FileSystemEventHandler):
         self.running = True
         self.retry_limit = int(os.getenv('RETRY_LIMIT', '10'))
         self.max_workers = int(os.getenv('MAX_WORKERS', '5'))
+        self.delete_before_update = os.getenv('DELETE_BEFORE_UPDATE', 'True').lower() == 'true'
         logger.info(f"Retry limit: {self.retry_limit}")
         logger.info(f"Max workers: {self.max_workers}")
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
@@ -121,8 +120,12 @@ class FileHandler(FileSystemEventHandler):
             target_path.parent.mkdir(parents=True, exist_ok=True)
 
             if target_path.exists():
-                logger.warning(f"[Thread-{thread_id}] File {target_path} already exists")
-                # FIXME delete?
+                if self.delete_before_update:
+                    logger.debug(f"[Thread-{thread_id}] Deleting {target_path} since it already "
+                                 f"exists and DELETE_BEFORE_UPDATE is set to True")
+                    os.remove(target_path)
+                else:
+                    logger.warning(f"[Thread-{thread_id}] File {target_path} already exists")
 
             # Log file details before copy
             source_size = filepath.stat().st_size
