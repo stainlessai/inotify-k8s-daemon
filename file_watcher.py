@@ -14,7 +14,6 @@ from concurrent.futures import ThreadPoolExecutor
 import threading
 import signal
 
-
 logger = logging.getLogger('FileWatcher')
 
 
@@ -121,6 +120,10 @@ class FileHandler(FileSystemEventHandler):
             # Create parent directories if they don't exist
             target_path.parent.mkdir(parents=True, exist_ok=True)
 
+            if target_path.exists():
+                logger.warning(f"[Thread-{thread_id}] File {target_path} already exists")
+                # FIXME delete?
+
             # Log file details before copy
             source_size = filepath.stat().st_size
             logger.debug(f"[Thread-{thread_id}] Attempting to copy file: {filepath} ({source_size} bytes)")
@@ -132,7 +135,13 @@ class FileHandler(FileSystemEventHandler):
 
             copy_duration = time.time() - copy_start_time
             target_size = target_path.stat().st_size
-            logger.info(f"[Thread-{thread_id}] Successfully copied {filepath} to {target_path}")
+
+            if source_size != target_size:
+                logger.warning(f"[Thread-{thread_id}] File size mismatch: source_size={source_size} "
+                               f"!= target_size={target_size} for {filepath}")
+            else:
+                logger.info(f"[Thread-{thread_id}] Successfully copied {filepath} to {target_path}")
+
             logger.debug(f"[Thread-{thread_id}] Copy completed in {copy_duration:.2f}s, size: {target_size} bytes")
             return True
 
