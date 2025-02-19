@@ -61,9 +61,10 @@ class Synchronizer:
                 self.stats['last_progress_time'] = current_time
 
     def find_missing_files(self):
-        """Stream missing files to the queue as they're found"""
-        logger.info("Starting directory scan")
+        """Find missing files in chunks and sort in reverse alphabetical order"""
+        logger.info("Starting directory scan - files will be processed in reverse alphabetical order")
         files_found = 0
+        chunk_size = 1000  # Process files in chunks to avoid memory issues
 
         with self.stats_lock:
             self.stats['scan_start_time'] = time.time()
@@ -71,28 +72,49 @@ class Synchronizer:
             self.stats['files_queued'] = 0
 
         try:
-            for source_file in self.source_dir.rglob('*'):
+            # Instead of trying to sort the entire directory tree at once,
+            # we'll walk it directory by directory
+            for current_dir, subdirs, files in os.walk(str(self.source_dir)):
                 if not self.running:
                     break
 
-                if source_file.is_file():
+                current_path = Path(current_dir)
+
+                # Sort files in reverse order
+                files.sort(reverse=True)
+
+                # Process files in this directory
+                for filename in files:
+                    if not self.running:
+                        break
+
+                    source_file = current_path / filename
+
                     with self.stats_lock:
                         self.stats['files_scanned'] += 1
 
-                    rel_path = source_file.relative_to(self.source_dir)
-                    target_file = self.target_dir / rel_path
+                    try:
+                        rel_path = source_file.relative_to(self.source_dir)
+                        target_file = self.target_dir / rel_path
 
-                    if not target_file.exists():
-                        logger.debug(f"Found missing file: {rel_path}")
-                        self.file_queue.put(source_file)
-                        with self.stats_lock:
-                            self.stats['files_queued'] += 1
-                            files_found += 1
+                        if source_file.is_file() and not target_file.exists():
+                            logger.debug(f"Found missing file: {rel_path}")
+                            self.file_queue.put(source_file)
+                            with self.stats_lock:
+                                self.stats['files_queued'] += 1
+                                files_found += 1
+                    except (OSError, ValueError) as e:
+                        logger.warning(f"Error processing file {source_file}: {e}")
+                        continue
 
                     # Log progress every minute
                     self.log_progress()
 
-            logger.info(f"Directory scan complete. Found {files_found} files to synchronize")
+                # Sort subdirectories in reverse order so they're processed in reverse alpha
+                subdirs.sort(reverse=True)
+
+            logger.info(
+                f"Directory scan complete. Found {files_found} files to synchronize (in reverse alphabetical order)")
 
         except Exception as e:
             logger.error(f"Error scanning directory: {str(e)}")
