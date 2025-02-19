@@ -98,9 +98,7 @@ class Synchronizer:
             logger.error(f"Error scanning directory: {str(e)}")
             logger.debug(f"Stack trace:\n{traceback.format_exc()}")
         finally:
-            # Final progress report
-            self.log_progress(force=True)
-            # Put sentinel values for each worker
+            # Put sentinel values for each worker to signal completion
             for _ in range(self.max_workers):
                 self.file_queue.put(None)
 
@@ -146,11 +144,6 @@ class Synchronizer:
                 logger.warning(f"[Thread-{thread_id}] - Source: {source_size} bytes")
                 logger.warning(f"[Thread-{thread_id}] - Target: {target_size} bytes")
                 raise IOError("File size mismatch after copy")
-
-            if abs(source_mtime - target_mtime) > 2:  # Allow 2 second difference
-                logger.warning(f"[Thread-{thread_id}] File timestamp mismatch:")
-                logger.warning(f"[Thread-{thread_id}] - Source: {time.ctime(source_mtime)}")
-                logger.warning(f"[Thread-{thread_id}] - Target: {time.ctime(target_mtime)}")
 
             with self.stats_lock:
                 self.stats['files_copied'] += 1
