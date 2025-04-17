@@ -39,14 +39,31 @@ class FileHandler(FileSystemEventHandler):
         """Process events from the queue in a dedicated thread"""
         while self.running:
             try:
-                event_type, filepath = self.event_queue.get(timeout=1)
-                with self.pending_files_lock:
+                event = self.event_queue.get(timeout=1)
+
+                # Handle different event types
+                if len(event) == 2:  # Standard format: (event_type, path)
+                    event_type, path = event
+
                     if event_type == 'created' or event_type == 'modified':
-                        self.pending_files[filepath] = (time.time(), 0)
+                        with self.pending_files_lock:
+                            self.pending_files[path] = (time.time(), 0)
+
                     elif event_type == 'deleted':
-                        if filepath in self.pending_files:
-                            del self.pending_files[filepath]
+                        with self.pending_files_lock:
+                            if path in self.pending_files:
+                                del self.pending_files[path]
+
+                    elif event_type == 'deleted_file':
+                        # Submit file deletion to the executor
+                        self.executor.submit(self._delete_file_with_retry, path)
+
+                    elif event_type == 'deleted_dir':
+                        # Submit directory deletion to the executor
+                        self.executor.submit(self._delete_directory_with_retry, path)
+
                 self.event_queue.task_done()
+
             except Empty:
                 continue
             except Exception as e:
@@ -86,18 +103,127 @@ class FileHandler(FileSystemEventHandler):
             target_path = self.target_dir / relative_path
 
             if target_path.exists():
+                # Queue the deletion task for both files and directories
                 if event.is_directory:
-                    shutil.rmtree(target_path)
-                    logger.info(f"Removed directory: {target_path}")
+                    logger.info(
+                        f"Directory deleted from source: {filepath}. Queueing deletion for target: {target_path}")
+                    # Add to the deletion queue instead of executing immediately
+                    self.event_queue.put(('deleted_dir', target_path))
                 else:
-                    target_path.unlink()
-                    logger.info(f"Removed file: {target_path}")
+                    logger.info(f"File deleted from source: {filepath}. Queueing deletion for target: {target_path}")
+                    # Add to the deletion queue instead of executing immediately
+                    self.event_queue.put(('deleted_file', target_path))
 
+                # Also add the original filepath to track it was processed
                 self.event_queue.put(('deleted', filepath))
         except (IOError, OSError) as e:
-            logger.error(f"Error removing {filepath}: {str(e)}")
+            logger.error(f"Error processing deletion for {filepath}: {str(e)}")
         except ValueError as e:
             logger.error(f"Path error with {filepath}: {str(e)}")
+
+    def _delete_file_with_retry(self, file_path, retry_count=0):
+        """Delete a file with retry mechanism"""
+        thread_id = threading.get_ident()
+        logger.debug(f"[Thread-{thread_id}] Starting to delete file: {file_path}")
+        logger.debug(f"[Thread-{thread_id}] Current retry count: {retry_count}")
+
+        try:
+            if not file_path.exists():
+                logger.warning(f"[Thread-{thread_id}] File {file_path} no longer exists")
+                return True
+
+            # Delete the file
+            file_path.unlink()
+            logger.info(f"[Thread-{thread_id}] Successfully removed file: {file_path}")
+            return True
+
+        except (IOError, OSError) as e:
+            retry_count += 1
+            logger.debug(f"[Thread-{thread_id}] Delete failed with error: {str(e)}")
+            logger.debug(f"[Thread-{thread_id}] Full error traceback:\n{traceback.format_exc()}")
+
+            if retry_count >= self.retry_limit:
+                logger.error(
+                    f"[Thread-{thread_id}] Failed to delete {file_path} after {retry_count} attempts: {str(e)}")
+                return False
+            else:
+                logger.warning(f"[Thread-{thread_id}] Retry {retry_count}/{self.retry_limit} for {file_path}: {str(e)}")
+                time.sleep(1)  # Add a small delay before retry
+                return self._delete_file_with_retry(file_path, retry_count)
+
+        except Exception as e:
+            logger.error(f"[Thread-{thread_id}] Unexpected error deleting file {file_path}: {str(e)}")
+            logger.debug(f"[Thread-{thread_id}] Stack trace:\n{traceback.format_exc()}")
+            return False
+
+    def _delete_directory_with_retry(self, directory_path, retry_count=0):
+        """Delete a directory with retry mechanism"""
+        thread_id = threading.get_ident()
+        logger.debug(f"[Thread-{thread_id}] Starting to delete directory: {directory_path}")
+        logger.debug(f"[Thread-{thread_id}] Current retry count: {retry_count}")
+
+        try:
+            if not directory_path.exists():
+                logger.warning(f"[Thread-{thread_id}] Directory {directory_path} no longer exists")
+                return True
+
+            # For very large directories, delete files in chunks to avoid memory issues
+            total_items = 0
+            deleted_items = 0
+
+            # Count total items first (optional, for logging)
+            for _, _, files in os.walk(str(directory_path), topdown=False):
+                total_items += len(files)
+
+            logger.info(
+                f"[Thread-{thread_id}] Beginning deletion of directory with {total_items} files: {directory_path}")
+
+            # Delete files first, then directories (bottom-up approach)
+            for root, dirs, files in os.walk(str(directory_path), topdown=False):
+                # Delete files in this directory
+                for name in files:
+                    try:
+                        file_path = Path(root) / name
+                        file_path.unlink()
+                        deleted_items += 1
+
+                        # Log progress periodically
+                        if deleted_items % 100 == 0:
+                            logger.info(
+                                f"[Thread-{thread_id}] Deleted {deleted_items}/{total_items} files from {directory_path}")
+                    except (IOError, OSError) as e:
+                        logger.warning(f"[Thread-{thread_id}] Error deleting file {file_path}: {str(e)}")
+
+                # Delete empty directories
+                for name in dirs:
+                    try:
+                        dir_path = Path(root) / name
+                        dir_path.rmdir()  # This only removes empty directories
+                    except (IOError, OSError) as e:
+                        logger.warning(f"[Thread-{thread_id}] Error deleting directory {dir_path}: {str(e)}")
+
+            # Finally remove the root directory
+            try:
+                directory_path.rmdir()
+                logger.info(f"[Thread-{thread_id}] Successfully removed directory: {directory_path}")
+                return True
+            except (IOError, OSError) as e:
+                # If we still can't remove it, retry or fail
+                retry_count += 1
+                if retry_count >= self.retry_limit:
+                    logger.error(
+                        f"[Thread-{thread_id}] Failed to delete directory {directory_path} after {retry_count} attempts")
+                    return False
+                else:
+                    logger.warning(
+                        f"[Thread-{thread_id}] Retry {retry_count}/{self.retry_limit} for {directory_path}: {str(e)}")
+                    time.sleep(1)  # Add a small delay before retry
+                    return self._delete_directory_with_retry(directory_path, retry_count)
+
+        except Exception as e:
+            logger.error(f"[Thread-{thread_id}] Unexpected error deleting directory {directory_path}: {str(e)}")
+            logger.debug(f"[Thread-{thread_id}] Stack trace:\n{traceback.format_exc()}")
+            return False
 
     def process_single_file(self, filepath, start_time, retry_count):
         """Process a single file and return whether it should be removed from pending"""

@@ -26,3 +26,12 @@ volumeMounts:
 
 Any files that are closed for writing in the source directory will be immediatly copied
 to the target directory
+
+## Deploy
+
+Use skaffold to deploy. By default it will just update the `latest` tag in Dockerhub. Then restart the pod, if 
+it is configured to use 'latest' it will update automatically.
+
+`skaffold build --platform=linux/amd64`
+
+

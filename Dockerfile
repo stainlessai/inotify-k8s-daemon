@@ -1,4 +1,4 @@
-FROM --platform=linux/amd64 python:3.8-slim-buster
+FROM python:3.8-slim-buster
 
 # Install required packages
 RUN pip install --no-cache-dir watchdog lockfile
