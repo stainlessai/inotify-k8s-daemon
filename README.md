@@ -32,6 +32,9 @@ to the target directory
 Use skaffold to deploy. By default it will just update the `latest` tag in Dockerhub. Then restart the pod, if 
 it is configured to use 'latest' it will update automatically.
 
-`skaffold build --platform=linux/amd64`
+```
+skaffold build --platform=linux/amd64
+docker push stainlessai/inotify-k8s-daemon:latest
+```
 
 
